@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Bookbug HM Administrator</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;600&family=Zilla+Slab:wght@600&family=BioRhyme+Expanded:wght@800&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<!--
+  Bookbug HM only (not part of Bookbug, and not rebuilt by the daily sync).
+  The administrator view: Horace Mann's administration reads every book
+  written in Bookbug HM, of every type, on Home, archived or recently
+  deleted, with its comments and pictures. Read-only. It uses the sign-in
+  saved by the Bookbug HM page and the server's /hm-admin/* routes
+  (routeHmAdmin in cloud-sync-backend/index.mjs), which record every look
+  in the access log.
+-->
+<style>
+  :root {
+    --paper: #EFE3C8; --card: #FBF5E6; --ink: #2E2013; --muted: #6B5A42; --rule: #E1D1AC;
+    --edge: #C9B183; --hover: #F2E7CB; --accent: #6E7B3E; --warn: #8B3A2B; --accent-soft: #E0E6CB;
+    --ui: 'Work Sans', system-ui, sans-serif; --display: 'Zilla Slab', Georgia, serif; --book: 'EB Garamond', Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--paper); color: var(--ink); font: 16px/1.5 var(--ui); padding: 0 16px 80px; }
+  main { max-width: 900px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 26px 0 18px; border-bottom: 1px solid var(--rule); }
+  .appname { font: 800 26px/1 'BioRhyme Expanded', var(--ui); letter-spacing: .03em; margin: 0; text-decoration: none; color: var(--ink); }
+  .appname .c1 { color: #C1602A; } .appname .c2 { color: #6E7B3E; } .appname .c3 { color: #7A4E2B; } .appname .c4 { color: #5C7A93; }
+  .appname .hm { height: .8em; width: auto; vertical-align: baseline; margin-left: .3em; }
+  .badge { font: 600 12px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase; background: var(--ink); color: var(--paper); padding: 5px 9px; border-radius: 6px; }
+  .who { margin-left: auto; color: var(--muted); font-size: 14px; }
+  nav { display: flex; gap: 6px; margin: 18px 0 6px; flex-wrap: wrap; }
+  nav a { color: var(--ink); text-decoration: none; padding: 6px 12px; border: 1px solid var(--edge); border-radius: 999px; font-size: 14px; }
+  nav a.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .note { color: var(--muted); font-size: 14px; margin: 6px 0 22px; }
+  h1 { font: 600 30px/1.2 var(--display); margin: 8px 0 4px; overflow-wrap: anywhere; }
+  h2 { font: 600 21px/1.3 var(--display); margin: 30px 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: 15px; }
+  a { color: var(--ink); }
+  .crumbs { font-size: 14px; margin: 14px 0 0; }
+  .crumbs a { color: var(--muted); }
+  .list { display: grid; gap: 8px; }
+  .row { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; color: inherit; text-decoration: none; }
+  a.row:hover { background: var(--hover); border-color: var(--edge); }
+  .row .main { font-weight: 600; overflow-wrap: anywhere; }
+  .row .meta { color: var(--muted); font-size: 14px; }
+  .row .right { margin-left: auto; color: var(--muted); font-size: 14px; }
+  .tag { font-size: 12px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--edge); color: var(--muted); }
+  .tag.gone { border-color: var(--warn); color: var(--warn); }
+  input[type=search], input[type=email] { font: inherit; padding: 8px 12px; border: 1px solid var(--edge); border-radius: 8px; background: var(--card); width: 100%; max-width: 380px; }
+  button { font: 600 14px/1 var(--ui); padding: 9px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button.quiet { background: transparent; color: var(--ink); border-color: var(--edge); font-weight: 400; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--card); }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); }
+  .scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; margin-bottom: 14px; }
+  .msg { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 20px; margin-top: 22px; }
+  .err { color: var(--warn); }
+  .facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 15px; margin: 8px 0; }
+  .facts dt { color: var(--muted); }
+  .facts dd { margin: 0; overflow-wrap: anywhere; }
+
+  /* The book, as read. */
+  .sheet { background: #fff; border: 1px solid var(--rule); border-radius: 10px; padding: 22px 26px; margin: 0 0 14px; }
+  .sheet h3 { font: 600 22px/1.3 var(--book); margin: 0 0 10px; }
+  .sheet .section { font: 600 13px/1.2 var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
+  .text { font: 18px/1.55 var(--book); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .text .ln { min-height: 1.55em; }
+  .text img { max-width: 100%; display: block; margin: 8px 0; }
+  .comments { margin: 14px 0 0; display: grid; gap: 6px; }
+  .comment { background: var(--accent-soft); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+  .comment b { font-weight: 600; }
+  .label { font: 600 12px/1.2 var(--ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 12px 0 4px; }
+  .art { display: block; max-width: 100%; max-height: 70vh; margin: 6px 0; border: 1px solid var(--rule); background: #fff; }
+  .art.missing { width: 100%; height: 120px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; background: var(--hover); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .grid .sheet { margin: 0; padding: 14px; }
+  .caption { font: italic 17px/1.4 var(--book); margin: 8px 0 0; }
+  .balloons { font-size: 15px; margin: 8px 0 0; padding-left: 18px; }
+  @media (max-width: 600px) { .sheet { padding: 16px; } }
+  @media print { nav, .note, .crumbs { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="appname" href="./"><span class="c1">b</span><span class="c2">o</span><span class="c4">o</span><span class="c3">k</span><span class="c1">b</span><span class="c3">u</span><span class="c4">g</span><img class="hm" src="hm-shield.svg" alt="HM"></a>
+    <span class="badge">Administrator</span>
+    <span class="who" id="who"></span>
+  </header>
+  <nav id="nav" hidden>
+    <a href="#writers" data-tab="writers">Writers</a>
+    <a href="#admins" data-tab="admins">Administrators</a>
+    <a href="#log" data-tab="log">Access log</a>
+  </nav>
+  <p class="note" id="note" hidden>Read-only: nothing here can be changed. Every book you open is recorded in the access log, which all administrators can see.</p>
+  <div id="view"><p class="sub">Loading…</p></div>
+</main>
+<script>
+(function () {
+  'use strict';
+  var API = 'https://lpf3k6atmbmhwch2e47tjqu6sy0qqdpv.lambda-url.us-east-1.on.aws';
+  var AUTH_KEY = 'poetryBooklet.cloudAuth.v1'; // the sign-in saved by the Bookbug HM page
+  var token = null, me = null, overview = null;
+  var view = document.getElementById('view');
+  var KINDS = { collection: 'Poetry collection', novel: 'Novel', essays: 'Essay collection', screenplay: 'Screenplay', play: 'Stage play', picture: 'Picture book', cartoon: 'Cartoon batch', comic: 'Comic' };
+  var WHERE = { home: 'On Home', archived: 'Archived', deleted: 'Recently deleted' };
+
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      if (k === 'text') el.textContent = attrs[k];
+      else if (k === 'class') el.className = attrs[k];
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), attrs[k]);
+      else el.setAttribute(k, attrs[k]);
+    });
+    (kids || []).forEach(function (c) { if (c != null) el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return el;
+  }
+  function show() { view.textContent = ''; Array.prototype.forEach.call(arguments, function (n) { if (n) view.appendChild(n); }); }
+  function when(ms) { return ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—'; }
+  function enc(s) { return encodeURIComponent(s); }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+  function message(text, cls) { show(h('div', { class: 'msg' }, [h('p', { class: cls || '', text: text })])); }
+
+  async function api(path, body) {
+    var headers = { Authorization: 'Bearer ' + token };
+    if (body) headers['Content-Type'] = 'application/json';
+    var res = await fetch(API + path, { method: body ? 'PUT' : 'GET', headers: headers, body: body ? JSON.stringify(body) : undefined });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok) { var e = new Error(data.error || 'failed'); e.status = res.status; throw e; }
+    return data;
+  }
+  function failed(e) {
+    var why = {
+      not_admin: 'This account isn’t a Bookbug HM administrator.',
+      horacemann_only: 'Administrators must have an @horacemann.org address.',
+      not_found: 'That book isn’t there any more.',
+      primary_only: 'Only the primary administrator can add or remove administrators.',
+      manager_only_admins: 'Your account can add and remove administrators, but can’t see any books.',
+      cannot_remove_primary: 'That account can’t be removed here.'
+    }[e.message];
+    if (!why && e.status === 401) why = 'Your sign-in has run out. Open Bookbug HM, sign in again, then come back.';
+    if (!why && e.status === 404) why = 'The server hasn’t been updated for administrators yet.';
+    message(why || 'Something went wrong (' + e.message + '). Try reloading.', 'err');
+  }
+
+  function crumbs(list) {
+    var p = h('p', { class: 'crumbs' });
+    list.forEach(function (c, i) { if (i) p.appendChild(document.createTextNode(' / ')); p.appendChild(h('a', { href: c[0], text: c[1] })); });
+    return p;
+  }
+  function nameOf(a) { return a.name || a.email || 'Unnamed account'; }
+  async function loadOverview() {
+    if (!overview) overview = (await api('/hm-admin/overview')).accounts;
+    return overview;
+  }
+  function accountOf(sub) { return overview && overview.find(function (a) { return a.sub === sub; }); }
+  function typeOf(b) { return KINDS[b.form] || KINDS[b.kind] || 'Book'; }
+
+  // ---- Writers ----
+  async function writers() {
+    if (!overview) show(h('p', { class: 'sub', text: 'Loading every Bookbug HM writer…' }));
+    await loadOverview();
+    var list = h('div', { class: 'list' });
+    function draw(q) {
+      list.textContent = '';
+      var words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      overview.filter(function (a) {
+        var hay = [a.name, a.email].concat(a.books.map(function (b) { return b.title; })).join(' ').toLowerCase();
+        return words.every(function (w) { return hay.indexOf(w) >= 0; });
+      }).forEach(function (a) {
+        list.appendChild(h('a', { class: 'row', href: '#w/' + enc(a.sub) }, [
+          h('span', { class: 'main', text: nameOf(a) }),
+          h('span', { class: 'meta', text: a.email }),
+          h('span', { class: 'right', text: plural(a.books.length, 'book', 'books') + ' · last saved ' + when(a.updatedAt) })
+        ]));
+      });
+      if (!list.children.length) list.appendChild(h('p', { class: 'sub', text: overview.length ? 'Nobody matches.' : 'Nobody has written anything in Bookbug HM yet.' }));
+    }
+    var search = h('input', { type: 'search', placeholder: 'Find a writer or a book', 'aria-label': 'Find a writer or a book', oninput: function () { draw(search.value); } });
+    draw('');
+    show(h('h1', { text: 'Writers' }), h('p', { class: 'sub', text: plural(overview.length, 'Horace Mann account', 'Horace Mann accounts') + ' in Bookbug HM.' }), h('p', {}, [search]), list);
+  }
+
+  async function writer(sub) {
+    await loadOverview();
+    var a = accountOf(sub);
+    if (!a) return message('That account isn’t in Bookbug HM.', 'err');
+    var groups = ['home', 'archived', 'deleted'].map(function (where) {
+      var books = a.books.filter(function (b) { return b.where === where; }).sort(function (x, y) { return y.updatedAt - x.updatedAt; });
+      if (!books.length) return null;
+      return h('div', {}, [h('h2', { text: WHERE[where] }), h('div', { class: 'list' }, books.map(function (b) {
+        return h('a', { class: 'row', href: '#b/' + enc(sub) + '/' + enc(b.id) }, [
+          h('span', { class: 'main', text: b.title || 'Untitled' }), h('span', { class: 'tag', text: typeOf(b) }),
+          h('span', { class: 'right', text: 'edited ' + when(b.updatedAt) })
+        ]);
+      }))]);
+    });
+    show(crumbs([['#writers', 'Writers']]), h('h1', { text: nameOf(a) }), h('p', { class: 'sub', text: a.email + ' · last saved ' + when(a.updatedAt) }),
+      a.books.length ? null : h('p', { class: 'sub', text: 'No books yet.' }), groups[0], groups[1], groups[2]);
+  }
+
+  // ---- One book ----
+  var currentSub = null, imageCache = {};
+  // A picture in the book, fetched when it's drawn.
+  function art(id) {
+    var el = h('div', { class: 'art missing', text: id ? 'Loading illustration…' : 'No illustration' });
+    if (!id) return el;
+    var sub = currentSub;
+    (imageCache[sub + '/' + id] = imageCache[sub + '/' + id] || api('/hm-admin/image?sub=' + enc(sub) + '&id=' + enc(id))).then(function (d) {
+      var img = h('img', { class: 'art', alt: '', src: 'data:' + d.type + ';base64,' + d.data });
+      el.replaceWith(img);
+    }).catch(function () { el.textContent = 'This illustration isn’t on the server.'; });
+    return el;
+  }
+  // Bookbug's **bold**, *italic* and __underline__ markers as type (\ escapes one).
+  function rich(line) {
+    var out = h('span'), re = /\\([*_\\])|\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*/g, last = 0, m;
+    while ((m = re.exec(line))) {
+      if (m.index > last) out.appendChild(document.createTextNode(line.slice(last, m.index)));
+      if (m[1]) out.appendChild(document.createTextNode(m[1]));
+      else if (m[2] != null) out.appendChild(h('b', { text: m[2] }));
+      else if (m[3] != null) out.appendChild(h('u', { text: m[3] }));
+      else out.appendChild(h('i', { text: m[4] }));
+      last = re.lastIndex;
+    }
+    if (last < line.length) out.appendChild(document.createTextNode(line.slice(last)));
+    return out;
+  }
+  function commentList(list, lineLabel) {
+    if (!list || !list.length) return null;
+    return h('div', { class: 'comments' }, list.map(function (c) {
+      var head = lineLabel && typeof c.line === 'number' ? 'Line ' + (c.line + 1) + (c.quote && c.quote.trim() ? ' “' + c.quote.trim().slice(0, 60) + '”' : '') + ': ' : '';
+      return h('div', { class: 'comment' }, [h('b', { text: 'Comment' + (head ? ', ' + head : ': ') }), c.text, ' ', h('span', { class: 'meta', text: '(' + when(c.at) + ')' })]);
+    }));
+  }
+  function textEntry(p, data) {
+    if (!p) return null;
+    if (p.kind === 'section') return h('div', { class: 'sheet' }, [h('p', { class: 'section', text: 'Section' }), h('h3', { text: p.title || 'Untitled section' })]);
+    var body = h('div', { class: 'text' }, (p.lines || []).map(function (line) {
+      var m = /^\s*\[image (\d+)(?: (?:top|middle|bottom))?\]\s*$/.exec(line || '');
+      var im = m && data.images && data.images['img' + m[1]];
+      if (im && im.data) return h('img', { src: im.data, alt: '' });
+      return h('div', { class: 'ln' }, [rich(line || '')]);
+    }));
+    return h('div', { class: 'sheet' }, [h('h3', { text: p.title || 'Untitled' }), body, commentList(p.comments, true)]);
+  }
+  function textBook(d) {
+    var out = [];
+    var extras = [['Epigraph', d.epigraph && d.epigraph + (d.epigraphSource ? '\n— ' + d.epigraphSource : '')], ['Dedication', d.dedication], ['Acknowledgments', d.acknowledgments], ['About the author', d.aboutAuthor]];
+    extras.forEach(function (x) { if (typeof x[1] === 'string' && x[1].trim()) out.push(h('div', { class: 'sheet' }, [h('p', { class: 'section', text: x[0] }), h('div', { class: 'text', text: x[1] })])); });
+    (d.poems || []).forEach(function (p) { out.push(textEntry(p, d)); });
+    if (!(d.poems || []).length) out.push(h('p', { class: 'sub', text: 'Nothing written yet.' }));
+    if ((d.archivedPoems || []).length) { out.push(h('h2', { text: 'Archived in this book' })); d.archivedPoems.forEach(function (p) { out.push(textEntry(p, d)); }); }
+    if ((d.deletedPoems || []).length) { out.push(h('h2', { text: 'Recently deleted in this book' })); d.deletedPoems.forEach(function (x) { out.push(textEntry(x.poem, d)); }); }
+    return out;
+  }
+  function spreadSheet(sp, label) {
+    var kids = [h('h3', { text: label })];
+    var roles = [sp.left && sp.left.role, sp.right && sp.right.role].filter(function (r) { return r && r !== 'story'; });
+    if (roles.length) kids.push(h('p', { class: 'meta', text: roles.join(' · ') }));
+    (sp.items || []).forEach(function (it) {
+      if (it.type === 'image') kids.push(art(it.img));
+      else if ((it.text || '').trim()) kids.push(h('div', { class: 'text' }, it.text.split('\n').map(function (l) { return h('div', { class: 'ln' }, [rich(l)]); })));
+    });
+    if ((sp.notes || '').trim()) { kids.push(h('p', { class: 'label', text: 'Illustration notes' })); kids.push(h('div', { class: 'text', text: sp.notes })); }
+    kids.push(commentList(sp.comments));
+    return h('div', { class: 'sheet' }, kids);
+  }
+  function pictureBook(d) {
+    var n = (d.spreads || []).length, out = [];
+    (d.spreads || []).forEach(function (sp, i) { out.push(spreadSheet(sp, i === 0 ? 'Page 1' : i === n - 1 ? 'Last page' : 'Spread ' + i)); });
+    if ((d.archived || []).length) { out.push(h('h2', { text: 'Archived in this book' })); d.archived.forEach(function (sp) { out.push(spreadSheet(sp, sp.itemOnly ? 'Archived item' : 'Archived spread')); }); }
+    if ((d.deleted || []).length) { out.push(h('h2', { text: 'Recently deleted in this book' })); d.deleted.forEach(function (x) { out.push(spreadSheet(x.spread || {}, 'Deleted ' + when(x.deletedAt))); }); }
+    return out;
+  }
+  function cartoonCard(c, i) {
+    return h('div', { class: 'sheet' }, [h('p', { class: 'section', text: typeof i === 'number' ? 'Cartoon ' + (i + 1) : i }), art(c.img),
+      (c.caption || '').trim() ? h('p', { class: 'caption', text: c.caption }) : null, commentList(c.comments)]);
+  }
+  function cartoonBatch(d) {
+    var out = [h('div', { class: 'grid' }, (d.cartoons || []).map(cartoonCard))];
+    if ((d.archived || []).length) out.push(h('h2', { text: 'Archived in this batch' }), h('div', { class: 'grid' }, d.archived.map(function (c) { return cartoonCard(c, 'Archived'); })));
+    if ((d.deleted || []).length) out.push(h('h2', { text: 'Recently deleted in this batch' }), h('div', { class: 'grid' }, d.deleted.map(function (x) { return cartoonCard(x.cartoon || {}, 'Deleted ' + when(x.deletedAt)); })));
+    return out;
+  }
+  function comicPage(pg, label) {
+    var kids = [h('h3', { text: label })];
+    var withArt = (pg.panels || []).filter(function (p) { return p.img; });
+    kids.push(h('p', { class: 'meta', text: plural((pg.panels || []).length, 'panel', 'panels') + (withArt.length < (pg.panels || []).length ? ', ' + withArt.length + ' with art' : '') }));
+    if (withArt.length) kids.push(h('div', { class: 'grid' }, withArt.map(function (p) { return art(p.img); })));
+    var words = (pg.balloons || []).filter(function (b) { return (b.text || '').trim(); });
+    if (words.length) {
+      kids.push(h('p', { class: 'label', text: 'Words' }));
+      kids.push(h('ol', { class: 'balloons' }, words.map(function (b) { return h('li', {}, [h('span', { class: 'meta', text: (b.kind || 'speech') + ': ' }), b.text]); })));
+    }
+    kids.push(commentList(pg.comments));
+    return h('div', { class: 'sheet' }, kids);
+  }
+  function comic(d) {
+    var out = (d.pages || []).map(function (pg, i) { return comicPage(pg, 'Page ' + (i + 1)); });
+    var archived = d.archived || [];
+    if (archived.length) {
+      out.push(h('h2', { text: 'Archived in this comic' }));
+      archived.forEach(function (a) { out.push(a.kind === 'page' ? comicPage(a.page || {}, 'Archived page') : h('div', { class: 'sheet' }, [h('p', { class: 'section', text: 'Archived art' }), art(a.img)])); });
+    }
+    return out;
+  }
+
+  async function book(sub, id) {
+    currentSub = sub;
+    var d = await api('/hm-admin/book?sub=' + enc(sub) + '&id=' + enc(id)), e = d.entry, data = e.data || {};
+    try { await loadOverview(); } catch (err) { /* the crumbs fall back to the email */ }
+    var form = d.kind === 'text' ? (data.form || 'collection') : d.kind;
+    var who = d.owner.name ? d.owner.name + ' (' + d.owner.email + ')' : d.owner.email;
+    var facts = h('dl', { class: 'facts' }, [
+      h('dt', { text: 'Writer' }), h('dd', {}, [h('a', { href: '#w/' + enc(sub), text: who || sub })]),
+      h('dt', { text: 'Type' }), h('dd', { text: KINDS[form] || 'Book' }),
+      h('dt', { text: 'Where' }), h('dd', { text: WHERE[d.where] + (e.deletedAt ? ', ' + when(e.deletedAt) : '') }),
+      h('dt', { text: 'Last edited' }), h('dd', { text: when(e.updatedAt) })
+    ].concat(data.author ? [h('dt', { text: 'Author' }), h('dd', { text: data.author })] : []));
+    var body = d.kind === 'picture' ? pictureBook(data) : d.kind === 'cartoon' ? cartoonBatch(data) : d.kind === 'comic' ? comic(data) : textBook(data);
+    show.apply(null, [crumbs([['#writers', 'Writers'], ['#w/' + enc(sub), who || 'Writer']]), h('h1', { text: e.title || data.bookTitle || data.title || 'Untitled' }), facts, h('h2', { text: 'The book' })].concat(body));
+  }
+
+  // ---- Administrators ----
+  async function admins(data) {
+    data = data || await api('/hm-admin/admins');
+    var list = h('div', { class: 'list' });
+    data.primary.forEach(function (e) { list.appendChild(h('div', { class: 'row' }, [h('span', { class: 'main', text: e }), h('span', { class: 'tag', text: 'Primary' })])); });
+    (data.managers || []).forEach(function (e) { list.appendChild(h('div', { class: 'row' }, [h('span', { class: 'main', text: e }), h('span', { class: 'tag', text: 'Adds and removes administrators; can’t see any books' })])); });
+    data.admins.forEach(function (a) {
+      list.appendChild(h('div', { class: 'row' }, [
+        h('span', { class: 'main', text: a.email }),
+        h('span', { class: 'meta', text: 'added ' + when(a.addedAt) + (a.addedBy ? ' by ' + a.addedBy : '') }),
+        me.canGrant ? h('span', { class: 'right' }, [h('button', { class: 'quiet', type: 'button', text: 'Remove', onclick: async function () {
+          try { await admins(await api('/hm-admin/admins', { remove: a.email })); } catch (e) { failed(e); }
+        } })]) : null
+      ]));
+    });
+    var form = null;
+    if (me.canGrant) {
+      var input = h('input', { type: 'email', placeholder: 'name@horacemann.org', 'aria-label': 'Email address', required: '' });
+      var note = h('p', { class: 'sub' });
+      form = h('form', { onsubmit: async function (ev) {
+        ev.preventDefault();
+        var email = input.value.trim().toLowerCase();
+        if (!/@horacemann\.org$/.test(email)) { note.textContent = 'Administrators must have an @horacemann.org address.'; return; }
+        try { await admins(await api('/hm-admin/admins', { add: email })); } catch (e) { failed(e); }
+      } }, [h('h2', { text: 'Add an administrator' }), h('p', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, [input, h('button', { type: 'submit', text: 'Add' })]), note]);
+    }
+    show(h('h1', { text: 'Administrators' }),
+      h('p', { class: 'sub', text: 'Administrators can read every book written in Bookbug HM. ' + (me.manager ? 'You can add and remove administrators, but you can’t see any books yourself.' : me.primary ? 'As the primary administrator, you can add and remove the others.' : 'The primary administrator adds and removes the others.') }),
+      list, form);
+  }
+
+  async function log() {
+    var entries = (await api('/hm-admin/log')).entries;
+    var what = { overview: 'Listed all writers', book: 'Opened book', 'added admin': 'Added administrator', 'removed admin': 'Removed administrator' };
+    var rows = entries.map(function (e) { return h('tr', {}, [h('td', { text: when(e.at) }), h('td', { text: e.email }), h('td', { text: what[e.what] || e.what }), h('td', { text: e.label })]); });
+    show(h('h1', { text: 'Access log' }), h('p', { class: 'sub', text: 'Every look an administrator has taken, newest first (the last 500).' }),
+      h('div', { class: 'scroll' }, [h('table', {}, [h('tr', {}, ['When', 'Who', 'What', ''].map(function (x) { return h('th', { text: x }); }))].concat(rows))]));
+  }
+
+  // ---- Pages ----
+  async function route() {
+    var parts = location.hash.replace(/^#/, '').split('/').map(decodeURIComponent);
+    if (me.manager) parts = ['admins'];
+    var tab = { admins: 'admins', log: 'log' }[parts[0]] || 'writers';
+    document.querySelectorAll('nav a').forEach(function (a) { a.classList.toggle('on', a.dataset.tab === tab); });
+    window.scrollTo(0, 0);
+    try {
+      if (parts[0] === 'w') await writer(parts[1]);
+      else if (parts[0] === 'b') await book(parts[1], parts[2]);
+      else if (parts[0] === 'admins') await admins();
+      else if (parts[0] === 'log') await log();
+      else await writers();
+    } catch (e) { failed(e); }
+  }
+
+  async function start() {
+    try { token = localStorage.getItem(AUTH_KEY); } catch (e) { token = null; }
+    if (!token) {
+      show(h('div', { class: 'msg' }, [h('p', {}, ['Sign in to ', h('a', { href: './', text: 'Bookbug HM' }), ' with your @horacemann.org account first, then come back to this page.'])]));
+      return;
+    }
+    try { me = (await api('/hm-admin/me')).admin; } catch (e) { return failed(e); }
+    document.getElementById('who').textContent = me.email + (me.primary ? ' · primary administrator' : me.manager ? ' · manages administrators' : '');
+    if (me.manager) {
+      // Jake runs the service but doesn't see Horace Mann's books: only the list of administrators.
+      document.querySelectorAll('nav a:not([data-tab=admins])').forEach(function (a) { a.remove(); });
+    } else {
+      document.getElementById('note').hidden = false;
+    }
+    document.getElementById('nav').hidden = false;
+    window.addEventListener('hashchange', route);
+    route();
+  }
+  start();
+})();
+</script>
+</body>
+</html>
