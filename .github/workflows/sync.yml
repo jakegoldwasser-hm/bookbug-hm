@@ -1,0 +1,67 @@
+# Five times a day, brings in Bookbug's newest page from jake-goldwasser-2026, turns it
+# into Bookbug HM's with hm.sh, commits it if anything changed, and publishes the
+# site. Also runs on every push here, and by hand from the Actions tab
+# ("Sync from Bookbug" -> Run workflow). If hm.sh stops fitting Bookbug's page,
+# the run fails and the live site stays as it was.
+name: Sync from Bookbug
+
+on:
+  schedule:
+    - cron: '15 10,13,16,19,23 * * *'   # five times a day: 6:15, 9:15 and 12:15, then 3:15 and 7:15 p.m. New York (EDT; an hour earlier in winter)
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only Bookbug's folder and the site's top-level files.
+      - name: Bring in Bookbug
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/jakegoldwasser/jake-goldwasser-2026 /tmp/site
+          git -C /tmp/site sparse-checkout set bookbug
+
+      - name: Make it Bookbug HM's
+        run: |
+          bash hm.sh /tmp/site/bookbug/index.html > index.html
+
+      - name: Commit if Bookbug changed
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "Sync from Bookbug"
+            git push
+          fi
+
+      # The page's fonts, scripts, template and icons come straight from Bookbug
+      # (not kept here); privacy, terms and the administrators' files are Bookbug HM's own.
+      - name: Gather the site
+        run: |
+          mkdir _site
+          cp -R /tmp/site/bookbug/fonts /tmp/site/bookbug/vendor /tmp/site/bookbug/picture-book-template.html _site/
+          cp /tmp/site/selection-highlight.js /tmp/site/favicon.svg /tmp/site/favicon-48.png /tmp/site/favicon-96.png /tmp/site/apple-touch-icon.png _site/
+          cp index.html privacy.html terms.html admin.html hm-admin.js hm-shield.svg _site/
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
