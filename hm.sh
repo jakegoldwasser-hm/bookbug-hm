@@ -27,7 +27,9 @@ step g-antenna   's#h1\.appname span:last-child#h1.appname span:nth-child(7)#g'
 step hm-style    's#(\n  \.signin-gate-card h1\.appname \{[^\n]*)#$1\n  h1.appname .hm { height: .8em; width: auto; vertical-align: baseline; margin-left: .3em; }\n  h1.appname .beta { font: 600 .22em/1 "Work Sans", system-ui, sans-serif; letter-spacing: .08em; color: var(--ink-soft); vertical-align: super; margin-left: .35em; }#'
 # Files that Bookbug takes from the rest of jake-goldwasser.com are served
 # from here (the sync copies them), or linked there.
-step favicon     's#href="\.\./(favicon|apple-touch-icon)#href="$1#g'
+# Bookbug HM's own icons (Horace Mann's shield with a gold b), kept in this repository, at new addresses so
+# browsers don't keep showing Bookbug's.
+step favicon     's#href="\.\./(favicon-96\.png|favicon-48\.png|favicon\.svg|apple-touch-icon\.png)(?:\?v=\d+)?"#href="$1?v=hm1"#g'
 step highlight   's#src="/selection-highlight\.js#src="selection-highlight.js#'
 step terms       's#href="\.\./terms\.html"#href="terms.html"#g'
 step storyplotter 's#href="\.\./storyplotter/"#href="https://jake-goldwasser.com/storyplotter/"#g'

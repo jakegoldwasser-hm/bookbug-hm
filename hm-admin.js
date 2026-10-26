@@ -11,7 +11,31 @@
 
   function token() { try { return localStorage.getItem(AUTH_KEY); } catch (e) { return null; } }
 
+  // For the administrator managers (Jake) only: a Horace Mann maroon frame round
+  // the window and a tag at the foot, so this is never mistaken for Bookbug's
+  // unforked original.
+  var frame = null;
+  function showFrame() {
+    if (frame) return;
+    var st = document.createElement('style');
+    st.textContent =
+      '.hm-frame { position: fixed; inset: 0; border: 6px solid #802629; pointer-events: none; z-index: 2147483646; }' +
+      '.hm-frame-tag { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 2147483647; pointer-events: none;' +
+      ' background: #802629; color: #fff; font: 600 12px/1 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; padding: 7px 16px; border-radius: 8px 8px 0 0; }' +
+      '@media print { .hm-frame, .hm-frame-tag { display: none; } }';
+    document.head.appendChild(st);
+    frame = document.createElement('div');
+    frame.className = 'hm-frame';
+    var tag = document.createElement('div');
+    tag.className = 'hm-frame-tag';
+    tag.textContent = 'Horace Mann · Bookbug HM';
+    frame.appendChild(tag);
+    document.body.appendChild(frame);
+  }
+  function hideFrame() { if (frame) { frame.remove(); frame = null; } }
+
   function show(admin) {
+    if (admin.manager) showFrame();
     if (bar) return;
     var style = document.createElement('style');
     style.textContent =
@@ -28,7 +52,7 @@
     bar.title = admin.manager ? 'Add or remove Bookbug HM administrators' : 'Open the administrator view';
     document.body.appendChild(bar);
   }
-  function hide() { if (bar) { bar.remove(); bar = null; } }
+  function hide() { if (bar) { bar.remove(); bar = null; } hideFrame(); }
 
   function check() {
     var t = token();
