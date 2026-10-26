@@ -39,8 +39,9 @@ step gate-note   's#<p>Sign in with Google to start\.#<p id="hmGateNote">Sign in
 # ...and anyone else is signed straight back out.
 step hm-only     's#(\n(\s*)googleUserEmail = payload\.email \|\| \x27your account\x27;\n)#$1$2if (!/\@horacemann\\.org\$/i.test(payload.email || \x27\x27)) { signOut(); document.getElementById(\x27hmGateNote\x27).textContent = \x27Bookbug HM is only for Horace Mann accounts. Sign in with your \@horacemann.org address.\x27; return; }\n#'
 
-# Horace Mann administrators get "Administrator" at the top, linking to admin.html.
-step hm-admin    's#</body>#<script src="hm-admin.js" defer></script>\n</body>#'
+# Horace Mann administrators get "Administrator" at the top, linking to admin.html; and the Bring in
+# panel gets From Luddite HM (hm-luddite.js), a student's own Luddite HM writing.
+step hm-admin    's#</body>#<script src="hm-admin.js" defer></script>\n<script src="hm-luddite.js" defer></script>\n</body>#'
 
 cat "$tmp"
 rm -f "$tmp"
