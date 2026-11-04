@@ -2239,6 +2239,15 @@
   .scan-thumb em { position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--surface); font: 600 10px/16px system-ui, sans-serif; font-style: normal; white-space: nowrap; }
   .scan-strip:has(em) { padding-bottom: 10px; }
   .scan-strip[hidden], .scan-assign[hidden] { display: none; }
+  /* Picture books: Crop (the photo, the Keep outline) and Erase (what
+     comes in), one above the other's place, so the view never moves. */
+  .scan-tabs { display: inline-flex; margin-bottom: 8px; }
+  .scan-tabs[hidden] { display: none; }
+  .scan-tabs button { flex: 0 0 auto; padding: 6px 18px; }
+  .scan-keep polygon { fill: none; }
+  .scan-veil { fill: rgba(27, 26, 24, 0.55); }
+  .scan-region.is-erasing { border-color: var(--danger); background: color-mix(in srgb, var(--surface) 70%, transparent); }
+  .scan-box.is-phone .scan-tabs { display: none; }
   /* A phone only takes the photos in (picture books): the settings, the
      spread picker and the page's boxes are for a computer. */
   .scan-box.is-phone .scan-main { grid-template-columns: 1fr; }
@@ -5115,7 +5124,7 @@
       bind: ['title', 'author', 'byline', 'copyright'].indexOf(it.bind) !== -1 ? it.bind : null,
       rel: typeof it.rel === 'number' ? it.rel : null,
       auto: it.auto || null, autoText: typeof it.autoText === 'string' ? it.autoText : null,
-      copyright: !!it.copyright || undefined, path: pbNormPath(it.path) };
+      copyright: !!it.copyright || undefined, placed: !!it.placed || undefined, path: pbNormPath(it.path) };
   }
   // A text box's path (see pbPathLayout): points in pt from the box's
   // corner, and whether it closes into a shape.
@@ -18611,7 +18620,7 @@
   var pbGeomCache = new WeakMap();
   function pbGeom(it, s) {
     var sp = pbState.spreads[s];
-    var key = [pbItemText(it), it.x, it.y, it.w, it.rot, it.align, pbFontSize(it), pbLh(it), pbFontKey(it), it.bold, it.italic,
+    var key = [pbItemText(it), it.x, it.y, it.w, it.rot, it.align, it.placed, pbFontSize(it), pbLh(it), pbFontKey(it), it.bold, it.italic,
       pbState.trim, pbState.margin, pbState.gutter, pbState.snapText, sp && sp.left.role, sp && sp.right.role].join('|');
     if (it.type === 'text' && it.path) return pbPathGeom(it);
     var hit = pbGeomCache.get(it);
@@ -18637,11 +18646,12 @@
   // half, else the bottom one, and its words -- what they actually take
   // up, not the box, which can be wider than its lines -- are centered on
   // the page. Left alone: a box across the fold, one sitting in the
-  // page's middle (put there on purpose), matter pages and boxes with no
-  // words. In place on `g`; true if it moved it.
+  // page's middle (put there on purpose), a box moved by hand (`placed`:
+  // dragged or nudged, it stays where it's put; Jake, 2026-11-03), matter
+  // pages and boxes with no words. In place on `g`; true if it moved it.
   function pbSnapText(it, s, g) {
     var sp = pbState.spreads[s];
-    if (!pbState.snapText || it.auto || it.bind || pbStraddles(it)) return false;
+    if (!pbState.snapText || it.placed || it.auto || it.bind || pbStraddles(it)) return false;
     var side = pbPageSide(it), text = pbItemText(it);
     if (!sp || sp[side].role !== 'story' || !pbSpreadPages(s, pbState.spreads.length)[side] || !text.trim()) return false;
     var mid = g.y + g.h / 2;
@@ -20417,18 +20427,19 @@
       var to = cross.end();
       if (to && ev.type === 'pointerup') {
         pbCheckpoint();
-        it.x += last.x - x0; it.y = last.y;
+        it.x = last.x; it.y = last.y; it.placed = true;
         pbMoveItemToSpread(s, it, pbStageSpread(to));
         return;
       }
       if (to) { pbRefreshSpread(s); return; }
       if (moved && (last.x !== x0 || last.y !== y0)) {
         pbCheckpoint();
-        var px = it.x, py = it.y;
-        // Store the move relative to where it was placed (a snapped-to-edge
-        // box keeps its own x underneath).
-        it.x += last.x - x0;
+        var px = x0, py = y0;
+        // Kept where it's dropped, as seen: from now on it isn't snapped
+        // to the top or bottom of its page (`placed`).
+        it.x = last.x;
         it.y = last.y;
+        it.placed = true;
         // Remembered for this session only (not saved with the book).
         Object.defineProperty(it, '_prevX', { value: px, writable: true, configurable: true, enumerable: false });
         Object.defineProperty(it, '_prevY', { value: py, writable: true, configurable: true, enumerable: false });
@@ -21125,6 +21136,9 @@
   // batch of illustrations, at the foot of the spreads) they start on the
   // first story spread without one. A file dropped on a spread still goes
   // straight in, untouched, for finished digital art.
+  // A spread's width over its height, which a ruled frame on a dummy sheet
+  // is drawn to.
+  function pbSpreadAspect() { var t = pbTrim(pbState.trim); return 2 * t.pageW / t.pageH; }
   function pbScanSpreads() {
     var n = pbState.spreads.length;
     return pbState.spreads.map(function (sp, k) {
@@ -21148,7 +21162,7 @@
       hint: phone ? 'Photos of your art go on the next spreads without an illustration. To adjust them, open the book on a computer.'
         : batch ? 'Photos or a PDF of your art, all at once, cleaned up like a scan with one set of settings. Each goes on the next spread without an illustration; choose another spread under any photo.'
         : 'Photos or a PDF of your art, cleaned up like a scan. The first goes on this spread, the rest on the next spreads without an illustration.',
-      spreads: pbScanSpreads, startAt: s, startForce: !batch, phone: phone,
+      spreads: pbScanSpreads, startAt: s, startForce: !batch, phone: phone, crop: true, aspect: pbSpreadAspect(),
       storeRaw: function (enc) { return pbStoreImage(enc.blob, enc.canvas.width, enc.canvas.height); },
       store: function (enc, meta) { return pbStoreImage(enc.blob, enc.canvas.width, enc.canvas.height).then(function (id) { placed.push(Object.assign({ id: id }, meta || {})); }); },
       done: function () { pbPlaceScanned(placed); }
@@ -21197,7 +21211,7 @@
     var made = null;
     openCartoonImport(undefined, null, {
       title: 'Adjust the illustration', one: 'illustration', many: 'illustrations', mode: (it.scan && it.scan.mode) || 'color',
-      hint: '', adjust: { canvas: onWhite, raw: rawId, scan: it.scan },
+      hint: '', crop: true, aspect: pbSpreadAspect(), adjust: { canvas: onWhite, raw: rawId, scan: it.scan, noRaw: !it.raw },
       store: function (enc, meta) { return pbStoreImage(enc.blob, enc.canvas.width, enc.canvas.height).then(function (id) { made = { id: id, scan: meta && meta.scan }; }); },
       done: function () {
         if (!made) return;
@@ -21521,7 +21535,10 @@
     if (d && (it.type === 'text' || it.fit === 'free')) {
       e.preventDefault();
       var t = pbTrim(pbState.trim), ratio = 2 * t.pageW / t.pageH;
-      pbSetItem({ x: it.x + d[0] * step, y: it.y + d[1] * step * ratio });
+      // From where it shows (a snapped box's own x and y may differ), and
+      // then it stays where it's nudged.
+      var at = it.type === 'text' ? pbGeom(it, pbSel.s) : it;
+      pbSetItem(it.type === 'text' ? { x: at.x + d[0] * step, y: at.y + d[1] * step * ratio, placed: true } : { x: it.x + d[0] * step, y: it.y + d[1] * step * ratio });
     }
   });
 
@@ -24500,8 +24517,11 @@
   // each output pixel is looked up through the homography from the
   // rectangle to the photo's quadrilateral, blending the four nearest.
   // `free`: a ruled frame, any shape, not snapped to a sheet's.
-  function scanWarp(src, q, maxDim, free) {
+  // `shape`, if given, is the result's width over height, whatever the
+  // corners say (a ruled frame is drawn to be the spread).
+  function scanWarp(src, q, maxDim, free, shape) {
     var W = src.width, H = src.height, sh = scanSheetAspect(q, W, H, free);
+    if (shape) sh.aspect = shape;
     var area = Math.max(1, sh.w * sh.h), ow = Math.sqrt(area * sh.aspect), oh = ow / sh.aspect;
     var k = Math.min(1, maxDim / Math.max(ow, oh));
     ow = Math.max(1, Math.round(ow * k)); oh = Math.max(1, Math.round(oh * k));
@@ -24550,6 +24570,184 @@
     for (i = 0; i < 8; i++) h.push(A[i][8] / (A[i][i] || 1));
     return h;
   }
+  // A ruled frame by its lines alone: a pencil rule is a thin dark line
+  // with paper on both sides (a dark valley in bright paper), the opposite
+  // of a cutting mat's printed grid (thin bright lines on dark) and of a
+  // sheet's edge (a step from light to dark). Valleys running across the
+  // photo and valleys running up it are found apart, each family's long
+  // straight lines by a Hough transform restricted to its own angles, and
+  // of every two of each that close round a rectangle, the biggest whose
+  // four sides are ruled along most of their length is the frame. Corners
+  // in fractions, clockwise from top left, or null.
+  function scanFindRuled(src, aspect) {
+    var c = pbCanvasFrom(src, 1200), W = c.width, H = c.height, N = W * H, i, x, y;
+    var d = c.getContext('2d').getImageData(0, 0, W, H).data, L = new Float32Array(N), T = new Float32Array(N);
+    var S = new Uint8Array(N);
+    for (i = 0; i < N; i++) {
+      L[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+      S[i] = Math.max(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]) - Math.min(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]);
+    }
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++) { i = y * W + x; T[i] = (L[i - (x > 0 ? 1 : 0)] + 2 * L[i] + L[i + (x < W - 1 ? 1 : 0)]) / 4; }
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++) { i = y * W + x; L[i] = (T[i - (y > 0 ? W : 0)] + 2 * T[i] + T[i + (y < H - 1 ? W : 0)]) / 4; }
+    var Ls = [];
+    for (i = 0; i < N; i += 11) Ls.push(L[i]);
+    Ls.sort(function (a, b) { return a - b; });
+    var paper = Ls[Math.floor(Ls.length * 0.92)], bright = paper * 0.78, off = 3;
+    // Paper: light and nearly colorless (a wooden table is light but orange).
+    function isPaper(j) { return L[j] >= bright && S[j] < 40; }
+    // How far a pixel dips below the paper on both sides of it, across
+    // (`hz`: a line running across) or along (`vt`) the photo.
+    var hz = new Float32Array(N), vt = new Float32Array(N);
+    for (y = off; y < H - off; y++) for (x = off; x < W - off; x++) {
+      i = y * W + x;
+      var u = L[i - off * W], dn = L[i + off * W], lf = L[i - off], rt = L[i + off];
+      if (isPaper(i - off * W) && isPaper(i + off * W)) { var dh = Math.min(u, dn) - L[i]; if (dh > 5) hz[i] = dh; }
+      if (isPaper(i - off) && isPaper(i + off)) { var dv = Math.min(lf, rt) - L[i]; if (dv > 5) vt[i] = dv; }
+    }
+    var D = Math.ceil(Math.hypot(W, H)), NR = 2 * D + 1;
+    function hough(map, t0, t1) {
+      var nt = t1 - t0 + 1, acc = new Float32Array(nt * NR), cs = [], sn = [], k;
+      for (k = 0; k < nt; k++) { var a = (t0 + k) * Math.PI / 180; cs.push(Math.cos(a)); sn.push(Math.sin(a)); }
+      for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+        var v = map[y * W + x];
+        if (!v) continue;
+        v = Math.min(1, v / 25);
+        for (k = 0; k < nt; k++) acc[k * NR + Math.round(x * cs[k] + y * sn[k]) + D] += v;
+      }
+      var peaks = [], minVotes = Math.min(W, H) * 0.12;
+      for (var p = 0; p < 14; p++) {
+        var best = -1, bv = minVotes;
+        for (i = 0; i < acc.length; i++) if (acc[i] > bv) { bv = acc[i]; best = i; }
+        if (best < 0) break;
+        var bt = Math.floor(best / NR), br = best % NR - D;
+        peaks.push({ t: t0 + bt, r: br, c: cs[bt], s: sn[bt] });
+        for (var tt = Math.max(0, bt - 3); tt <= Math.min(nt - 1, bt + 3); tt++) for (var dr = -8; dr <= 8; dr++) {
+          var rr = br + dr + D;
+          if (rr >= 0 && rr < NR) acc[tt * NR + rr] = 0;
+        }
+      }
+      return peaks;
+    }
+    // Lines across have normals near 90 degrees, lines up near 0.
+    var across = hough(hz, 70, 110), up = hough(vt, -20, 20);
+    function meet(p, q) {
+      var det = p.c * q.s - q.c * p.s;
+      if (Math.abs(det) < 1e-6) return null;
+      return [(p.r * q.s - q.r * p.s) / det, (p.c * q.r - q.c * p.r) / det];
+    }
+    function ruledAlong(A, B, map, line) {
+      var n = 0, hit = 0, steps = Math.max(20, Math.round(Math.hypot(B[0] - A[0], B[1] - A[1]) / 3));
+      for (var s = 1; s < steps; s++) {
+        var px = A[0] + (B[0] - A[0]) * s / steps, py = A[1] + (B[1] - A[1]) * s / steps, ok = false;
+        if (px < 2 || py < 2 || px >= W - 2 || py >= H - 2) continue;
+        n++;
+        for (var o = -2; o <= 2 && !ok; o++) {
+          var qx = Math.round(px + line.c * o), qy = Math.round(py + line.s * o);
+          if (map[qy * W + qx]) ok = true;
+        }
+        if (ok) hit++;
+      }
+      return n ? hit / n : 0;
+    }
+    // Every rectangle that's ruled all round; with the book's spread shape
+    // (`aspect`, width over height), the biggest of that shape wins, since
+    // the edge of a sheet underneath can rule a line too.
+    var found = [];
+    for (var a = 0; a < across.length; a++) for (var b = 0; b < across.length; b++) {
+      var top = across[a], bot = across[b];
+      for (var e = 0; e < up.length; e++) for (var f = 0; f < up.length; f++) {
+        var lf = up[e], rt = up[f];
+        var q = [meet(top, lf), meet(top, rt), meet(bot, rt), meet(bot, lf)];
+        if (q.some(function (p) { return !p || p[0] < 0 || p[1] < 0 || p[0] >= W || p[1] >= H; })) continue;
+        // Top above bottom, left of right.
+        if (q[0][0] >= q[1][0] || q[3][0] >= q[2][0] || q[0][1] >= q[3][1] || q[1][1] >= q[2][1]) continue;
+        var ar = 0;
+        for (var z = 0; z < 4; z++) ar += q[z][0] * q[(z + 1) % 4][1] - q[(z + 1) % 4][0] * q[z][1];
+        ar = Math.abs(ar) / 2;
+        if (ar < N * 0.1) continue;
+        // A frame is ruled on one sheet: each corner is on paper.
+        if (!q.every(function (p) {
+          var n = 0;
+          for (var oy = -6; oy <= 6; oy += 6) for (var ox = -6; ox <= 6; ox += 6) {
+            var qx = Math.round(p[0] + ox), qy = Math.round(p[1] + oy);
+            if (qx >= 0 && qy >= 0 && qx < W && qy < H && isPaper(qy * W + qx)) n++;
+          }
+          return n >= 6;
+        })) continue;
+        if (ruledAlong(q[0], q[1], hz, top) < 0.55 || ruledAlong(q[3], q[2], hz, bot) < 0.55 ||
+            ruledAlong(q[0], q[3], vt, lf) < 0.55 || ruledAlong(q[1], q[2], vt, rt) < 0.55) continue;
+        found.push({ q: q, area: ar });
+      }
+    }
+    if (!found.length) return null;
+    found.forEach(function (f) { f.fq = f.q.map(function (p) { return [p[0] / W, p[1] / H]; }); f.aspect = scanSheetAspect(f.fq, W, H, true).aspect; });
+    var fit = aspect ? found.filter(function (f) { return Math.abs(f.aspect / aspect - 1) < 0.03; }) : [];
+    var pool = fit.length ? fit : found;
+    pool.sort(function (a, b) { return b.area - a.area; });
+    // Just inside, past the ruled line and no further: more cut Jake's
+    // drawing short by a few millimeters (2026-11-03). Marked `ruled`, so
+    // the picture can be set to the spread's exact shape.
+    var q = pool[0].fq, mx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, my = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+    var out = q.map(function (p) { return [p[0] + (mx - p[0]) * 0.006, p[1] + (my - p[1]) * 0.006]; });
+    out.ruled = true;
+    return out;
+  }
+  // The part of a photo to keep (picture books), as four corners in
+  // fractions of the photo, clockwise from top left: the picture's own
+  // edges, both its straightening and its crop. A ruled frame is the
+  // picture (`aspect`, the book's spread shape, picks it out from other
+  // ruled lines, as on a dummy sheet laid on others). Otherwise the drawing on the sheet: the sheet flattened small
+  // and cleaned, the ink's extent found (the table round a photo left out),
+  // a little paper kept round it, and those corners taken back onto the
+  // photo through the sheet's own perspective; a drawing filling nearly
+  // all of its sheet keeps the whole sheet. No sheet found: the ink's
+  // extent in the photo itself. No ink: the sheet, or the whole photo.
+  var SCAN_WHOLE = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  function scanGuessKeep(photo, aspect) {
+    var ruled = scanFindRuled(photo, aspect);
+    if (ruled) return ruled;
+    var r = scanFindEdges(photo);
+    if (r && r.frame) return r.quad;
+    var base = r ? r.quad : SCAN_WHOLE, small = pbCanvasFrom(photo, 1000);
+    var flat = r ? scanWarp(small, base, 700, true) : pbCanvasFrom(small, 700);
+    var g = scanClean(flat, { mode: 'gray', shadow: 80, contrast: 20, brightness: 0, trim: false }, 700);
+    var W = g.width, H = g.height, N = W * H, d = g.getContext('2d').getImageData(0, 0, W, H).data;
+    var ink = new Uint8Array(N), dark = new Uint8Array(N), i;
+    for (i = 0; i < N; i++) { ink[i] = d[i * 4] < 170 ? 1 : 0; dark[i] = d[i * 4] < 140 ? 1 : 0; }
+    var off = scanOffMask(W, H, dark), cols = new Uint32Array(W), rows = new Uint32Array(H);
+    for (i = 0; i < N; i++) if (ink[i] && !off[i]) { cols[i % W]++; rows[(i / W) | 0]++; }
+    // A row or column counts with a few dark pixels in it, not a speck.
+    var need = Math.max(2, Math.round(Math.min(W, H) * 0.004)), x0 = -1, x1 = -1, y0 = -1, y1 = -1;
+    for (i = 0; i < W; i++) if (cols[i] >= need) { if (x0 < 0) x0 = i; x1 = i; }
+    for (i = 0; i < H; i++) if (rows[i] >= need) { if (y0 < 0) y0 = i; y1 = i; }
+    if (x0 < 0 || y0 < 0) return base;
+    var pad = Math.max(W, H) * 0.03;
+    var fx0 = Math.max(0, (x0 - pad) / W), fx1 = Math.min(1, (x1 + 1 + pad) / W), fy0 = Math.max(0, (y0 - pad) / H), fy1 = Math.min(1, (y1 + 1 + pad) / H);
+    if ((fx1 - fx0) * (fy1 - fy0) > 0.92) return base;
+    var box = [[fx0, fy0], [fx1, fy0], [fx1, fy1], [fx0, fy1]];
+    if (!r) return box;
+    var M = scanHomography(SCAN_WHOLE, base);
+    return box.map(function (p) { return scanHApply(M, p[0], p[1]); });
+  }
+  // A point through a homography from scanHomography.
+  function scanHApply(M, x, y) {
+    var z = M[6] * x + M[7] * y + 1;
+    return [(M[0] * x + M[1] * y + M[2]) / z, (M[3] * x + M[4] * y + M[5]) / z];
+  }
+  // Erased areas, kept as polygons in fractions of the photo so they stay
+  // put however the outline or the turn changes, whited out on `c`, the
+  // straightened kept part (`quad`). In place.
+  function scanEraseOn(c, polys, quad) {
+    if (!polys || !polys.length) return c;
+    var w = c.width, h = c.height, M = scanHomography(quad, [[0, 0], [w, 0], [w, h], [0, h]]), ctx = c.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    polys.forEach(function (poly) {
+      ctx.beginPath();
+      poly.forEach(function (p, k) { var q = scanHApply(M, p[0], p[1]); if (k) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); });
+      ctx.closePath(); ctx.fill();
+    });
+    return c;
+  }
   // `sink` (comics, picture books) takes each cleaned drawing instead of
   // the batch: { title, one, many, hint, mode?, digitalArt?, store(encoded)
   // -> Promise, done(count) }; `mode` is the Scan as default (gray if not
@@ -24560,7 +24758,9 @@
   // which keeps each photo as taken so its illustration can be adjusted
   // again later; and for that later adjusting, `adjust` ({ canvas, raw,
   // scan }), one photo with the settings it came in with. `store` is then
-  // given ({ spread, raw, scan }) with each illustration.
+  // given ({ spread, raw, scan }) with each illustration. `crop` (picture
+  // books) swaps straightening, trimming and the drawing boxes for one
+  // Keep outline per photo, with Crop and Erase views.
   // The photo settings people set for how they take photos (straightening,
   // the light, pencil) are kept on this device.
   var SCAN_PHOTO_KEY = 'bookbug.scanPhoto.v1';
@@ -24578,11 +24778,11 @@
       '<div class="scan-cam" hidden><video playsinline muted></video>' +
         '<div class="scan-cam-row"><span class="scan-cam-count"></span><button class="btn" type="button" data-cam="done">Done</button><button class="btn btn-primary" type="button" data-cam="shoot">Take photo</button></div></div>' +
       '<p class="snap-empty scan-empty">' + (sink ? sink.hint : 'Each page of the PDF, or each photo, becomes a cartoon, in order, ready for its caption. On a page of several drawings, tap the ones to bring in, each as its own cartoon.') + '</p>' +
-      '<div class="scan-main" hidden><div><div class="scan-view"></div><p class="scan-note"></p>' +
+      '<div class="scan-main" hidden><div><div class="seg scan-tabs" hidden><button type="button" data-view="crop">Crop</button><button type="button" data-view="erase">Erase</button></div><div class="scan-view"></div><p class="scan-note"></p>' +
         '<div class="scan-assign" hidden><label>Goes on <select data-assign></select></label></div><div class="scan-strip"></div></div>' +
       '<div class="scan-controls">' +
         '<div class="field"><label>Scan as</label><div class="seg seg-3" data-mode><button type="button" data-val="color">Color</button><button type="button" data-val="gray">Grayscale</button><button type="button" data-val="bw">Black &amp; white</button></div></div>' +
-        '<label class="checkline scan-check" data-edges-line><input type="checkbox" data-k="edges"> Straighten to the paper’s edges</label>' +
+        '<label class="checkline scan-check" data-edges-line><input type="checkbox" data-k="edges"> Straighten and crop to the paper’s edges</label>' +
         '<fieldset class="scan-conds" data-conds><legend>The photo</legend>' + SCAN_CONDITIONS.map(function (c) {
           return '<label class="checkline scan-check" title="' + c[2] + '"><input type="checkbox" data-cond="' + c[0] + '"> ' + c[1] + '</label>';
         }).join('') + '</fieldset>' +
@@ -24591,7 +24791,7 @@
         '<div class="field"><label>Brightness <output data-out="brightness"></output></label><input type="range" min="-50" max="50" step="5" data-k="brightness"></div>' +
         '<div class="field"><label>Remove pencil marks <output data-out="marks"></output></label><input type="range" min="0" max="100" step="10" data-k="marks"></div>' +
         '<div class="field" data-thr><label>Ink threshold <output data-out="threshold"></output></label><input type="range" min="60" max="230" step="5" data-k="threshold"></div>' +
-        '<label class="checkline" style="text-transform:none;letter-spacing:0;font-weight:400;"><input type="checkbox" data-k="trim"> Trim the blank paper</label>' +
+        '<label class="checkline" style="text-transform:none;letter-spacing:0;font-weight:400;"><input type="checkbox" data-k="trim"> Crop to the drawing (cut away blank paper round it)</label>' +
       '</div></div>' +
       '<p class="scan-status" aria-live="polite"></p>' +
       '<div class="modal-actions"><button class="btn" type="button" data-act="cancel">Cancel</button><button class="btn btn-primary" type="button" data-act="add" disabled>Add ' + many + '</button></div>');
@@ -24620,6 +24820,18 @@
     // is adjusted later on a computer, from the photo kept with it.
     var phone = !!(sink && sink.phone) && !adjust, adjustTurn = (adjust && adjust.scan && adjust.scan.turn) || 0;
     if (phone) box.classList.add('is-phone');
+    // Picture books: one Keep outline per photo. The Erase view (what comes
+    // in) is the one shown first; a phone only ever shows that.
+    var cropMode = !!(sink && sink.crop), cropView = 'erase';
+    var tabs = box.querySelector('.scan-tabs');
+    tabs.hidden = !cropMode || phone;
+    tabs.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-view]');
+      if (!b || b.dataset.view === cropView) return;
+      cropView = b.dataset.view; syncTabs(); renderView();
+    });
+    function syncTabs() { tabs.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === cropView); }); }
+    syncTabs();
     var view = box.querySelector('.scan-view'), strip = box.querySelector('.scan-strip'), status = box.querySelector('.scan-status'), note = box.querySelector('.scan-note');
     var addBtn = box.querySelector('[data-act="add"]');
     // Take photos: the camera opens live in the dialog (a phone's back
@@ -24684,11 +24896,11 @@
       });
       box.querySelector('input[type="checkbox"][data-k="trim"]').checked = o.trim;
       // A ruled frame is the picture's edge: nothing to trim.
-      box.querySelector('input[type="checkbox"][data-k="trim"]').closest('label').hidden = framed(sources[cur]);
+      box.querySelector('input[type="checkbox"][data-k="trim"]').closest('label').hidden = cropMode || framed(sources[cur]);
       box.querySelector('[data-thr]').hidden = o.mode !== 'bw';
       // Straightening and the light are for photos of paper.
       var photos = sources.some(function (x) { return !x.digital && !x.fromPdf; });
-      box.querySelector('[data-edges-line]').hidden = !photos;
+      box.querySelector('[data-edges-line]').hidden = !photos || cropMode;
       box.querySelector('input[data-k="edges"]').checked = o.edges;
       box.querySelector('[data-conds]').hidden = dig;
       box.querySelectorAll('input[data-cond]').forEach(function (cb) { cb.checked = !!o.cond[cb.dataset.cond]; });
@@ -24700,6 +24912,7 @@
         var src = sources[cur];
         if (!src) return;
         view.innerHTML = '';
+        if (cropMode) { if (cropView === 'crop' && !phone) renderCrop(src); else renderKept(src); return; }
         if (editingEdges) { renderEdges(src); return; }
         // A page coming in whole is shown as it will come in, its printed
         // box line taken out.
@@ -24707,19 +24920,177 @@
         stage.className = 'scan-stage';
         stage.appendChild(cv);
         view.appendChild(stage);
-        var turns = document.createElement('div');
-        turns.className = 'scan-turn';
-        turns.innerHTML = '<button type="button" data-turn="-1" title="Turn the page left" aria-label="Turn the page left">↺</button><button type="button" data-turn="1" title="Turn the page right" aria-label="Turn the page right">↻</button>';
-        turns.addEventListener('click', function (e) {
-          var b = e.target.closest('[data-turn]');
-          if (!b) return;
-          turnSource(src, Number(b.dataset.turn));
-          refresh();
-        });
-        if (!phone) view.appendChild(turns);
+        if (!phone) view.appendChild(turnButtons(src));
         if (!phone && !src.digital && !src.fromPdf && o.edges) view.appendChild(edgesButton('Edges', 'Move the corners onto the paper’s corners', function () { editingEdges = true; renderView(); }));
         drawRegions(src, stage, cv);
       }, 30);
+    }
+    function turnButtons(src) {
+      var turns = document.createElement('div');
+      turns.className = 'scan-turn';
+      turns.innerHTML = '<button type="button" data-turn="-1" title="Turn the page left" aria-label="Turn the page left">↺</button><button type="button" data-turn="1" title="Turn the page right" aria-label="Turn the page right">↻</button>';
+      turns.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-turn]');
+        if (!b) return;
+        if (cropMode) turnKeep(src, Number(b.dataset.turn)); else turnSource(src, Number(b.dataset.turn));
+        refresh();
+      });
+      return turns;
+    }
+    // ---- The Keep outline (picture books) ----
+    // The kept part, straightened, at about `maxDim`: a smaller copy of the
+    // photo is flattened for the views, and the cleanup runs on that.
+    function keepWarp(src, maxDim) {
+      // The outline still on the ruled frame: the spread's exact shape, so
+      // a full-bleed illustration isn't zoomed (and cut) to fill it. The
+      // camera's angle can throw the shape worked out from the corners off
+      // by several percent; a frame that's sideways (a photo still to turn)
+      // is far further off, and keeps its own shape.
+      var shape = src.guess && src.guess.ruled && sink.aspect && sameQuad(src.quad, src.guess) &&
+        Math.abs(scanSheetAspect(src.quad, src.photo.width, src.photo.height, true).aspect / sink.aspect - 1) < 0.15 ? sink.aspect : 0;
+      return scanWarp(maxDim >= 2400 ? src.photo : pbCanvasFrom(src.photo, maxDim), src.quad, maxDim, true, shape);
+    }
+    function keepResult(src, warped, maxDim) {
+      return scanEraseOn(scanClean(warped, Object.assign(optsFor(src), { trim: false, frames: false }), maxDim), src.erase, src.quad);
+    }
+    function keepPreview(src) {
+      if (!src.prev) src.prev = keepWarp(src, 1200);
+      return src.prev;
+    }
+    function keepThumb(src) {
+      src.thumb = pbCanvasFrom(keepResult(src, keepWarp(src, 300), 240), 120).toDataURL('image/jpeg', 0.7);
+      var t = strip.children[sources.indexOf(src)];
+      if (t) t.style.backgroundImage = 'url(' + src.thumb + ')';
+    }
+    function keepChanged(src) { src.prev = null; keepThumb(src); }
+    // A quarter turn turns the photo and everything marked on it (the
+    // outline, the best guess, what's erased) with it, rather than looking
+    // for the edges again.
+    function turnKeep(src, dir) {
+      function pt(p) { return dir < 0 ? [p[1], 1 - p[0]] : [1 - p[1], p[0]]; }
+      function quadT(q) { var m = q.map(pt); return dir < 0 ? [m[1], m[2], m[3], m[0]] : [m[3], m[0], m[1], m[2]]; }
+      src.photo = turnCanvas(src.photo, dir);
+      src.turn = (((src.turn || 0) + dir) % 4 + 4) % 4;
+      var wasRuled = src.guess.ruled;
+      src.quad = quadT(src.quad); src.guess = quadT(src.guess); src.guess.ruled = wasRuled;
+      src.erase = src.erase.map(function (poly) { return poly.map(pt); });
+      src.photoView = null;
+      keepChanged(src);
+    }
+    function sameQuad(a, b) { return a.every(function (p, k) { return Math.abs(p[0] - b[k][0]) < 1e-4 && Math.abs(p[1] - b[k][1]) < 1e-4; }); }
+    function noteLink(label, fn) {
+      var a = document.createElement('button');
+      a.type = 'button'; a.className = 'btn-link scan-all'; a.textContent = label;
+      a.addEventListener('click', fn);
+      note.appendChild(document.createTextNode(' '));
+      note.appendChild(a);
+    }
+    // Erase view: what comes in. A drag across it whites that area out.
+    function renderKept(src) {
+      var cv = keepResult(src, keepPreview(src), 900), stage = document.createElement('div');
+      stage.className = 'scan-stage';
+      stage.appendChild(cv);
+      view.appendChild(stage);
+      src.thumb = pbCanvasFrom(cv, 120).toDataURL('image/jpeg', 0.7);
+      var t = strip.children[sources.indexOf(src)];
+      if (t) t.style.backgroundImage = 'url(' + src.thumb + ')';
+      if (phone) { note.textContent = ''; return; }
+      view.appendChild(turnButtons(src));
+      note.textContent = 'Drag across anything you want gone; it turns white. The rest stays.';
+      if (src.erase.length) noteLink('Undo erase', function () { src.erase.pop(); keepThumb(src); refresh(); });
+      stage.addEventListener('pointerdown', function (e) {
+        if (e.button > 0) return;
+        e.preventDefault();
+        var r0 = cv.getBoundingClientRect(), rect = document.createElement('div');
+        function at(e) { return [Math.max(0, Math.min(1, (e.clientX - r0.left) / r0.width)), Math.max(0, Math.min(1, (e.clientY - r0.top) / r0.height))]; }
+        var a = at(e), b = a;
+        rect.className = 'scan-region is-drawing is-erasing';
+        stage.appendChild(rect);
+        stage.setPointerCapture(e.pointerId);
+        function place() {
+          rect.style.left = Math.min(a[0], b[0]) * 100 + '%'; rect.style.top = Math.min(a[1], b[1]) * 100 + '%';
+          rect.style.width = Math.abs(b[0] - a[0]) * 100 + '%'; rect.style.height = Math.abs(b[1] - a[1]) * 100 + '%';
+        }
+        function move(e) { b = at(e); place(); }
+        function up(e) {
+          stage.removeEventListener('pointermove', move); stage.removeEventListener('pointerup', up); stage.removeEventListener('pointercancel', up);
+          rect.remove();
+          if (e.type === 'pointercancel' || Math.abs(b[0] - a[0]) < 0.01 || Math.abs(b[1] - a[1]) < 0.01) return;
+          // From the result's corners back onto the photo, through the
+          // outline's perspective.
+          var M = scanHomography(SCAN_WHOLE, src.quad), x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+          src.erase.push([[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(function (p) { return scanHApply(M, p[0], p[1]); }));
+          refresh();
+        }
+        stage.addEventListener('pointermove', move); stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+      });
+    }
+    // Crop view: the photo as taken, everything outside the outline veiled.
+    // Drag a corner to move it, or inside the outline to move it whole.
+    function renderCrop(src) {
+      if (!src.photoView) src.photoView = pbCanvasFrom(src.photo, 900);
+      var cv = src.photoView, stage = document.createElement('div');
+      stage.className = 'scan-stage scan-edges scan-keep';
+      stage.appendChild(cv);
+      var q = src.quad.map(function (p) { return p.slice(); });
+      var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 1 1'); svg.setAttribute('preserveAspectRatio', 'none');
+      var veil = document.createElementNS(NS, 'path'), poly = document.createElementNS(NS, 'polygon');
+      veil.setAttribute('fill-rule', 'evenodd'); veil.setAttribute('class', 'scan-veil');
+      poly.setAttribute('vector-effect', 'non-scaling-stroke');
+      svg.appendChild(veil); svg.appendChild(poly); stage.appendChild(svg);
+      function at(e) { var r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; }
+      function clamp(v) { return Math.max(0, Math.min(1, v)); }
+      function done() { src.quad = q.map(function (p) { return p.slice(); }); keepChanged(src); renderNote(); }
+      var dots = q.map(function (p, k) {
+        var h = document.createElement('i');
+        h.className = 'scan-corner';
+        h.setAttribute('aria-label', ['Top left', 'Top right', 'Bottom right', 'Bottom left'][k] + ' corner');
+        h.addEventListener('pointerdown', function (e) {
+          if (e.button > 0) return;
+          e.preventDefault(); e.stopPropagation();
+          h.setPointerCapture(e.pointerId);
+          function mv(e) { var p = at(e); q[k] = [clamp(p[0]), clamp(p[1])]; draw(); }
+          function up() { h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); done(); }
+          h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+        });
+        stage.appendChild(h);
+        return h;
+      });
+      function inside(p) {
+        for (var z = 0; z < 4; z++) { var A = q[z], B = q[(z + 1) % 4]; if ((B[0] - A[0]) * (p[1] - A[1]) - (B[1] - A[1]) * (p[0] - A[0]) < 0) return false; }
+        return true;
+      }
+      stage.addEventListener('pointermove', function (e) { if (!e.buttons) stage.style.cursor = inside(at(e)) ? 'move' : 'default'; });
+      stage.addEventListener('pointerdown', function (e) {
+        if (e.button > 0 || !inside(at(e))) return;
+        e.preventDefault();
+        stage.setPointerCapture(e.pointerId);
+        var p0 = at(e), q0 = q.map(function (p) { return p.slice(); });
+        var minX = Math.min.apply(null, q0.map(function (p) { return p[0]; })), maxX = Math.max.apply(null, q0.map(function (p) { return p[0]; }));
+        var minY = Math.min.apply(null, q0.map(function (p) { return p[1]; })), maxY = Math.max.apply(null, q0.map(function (p) { return p[1]; }));
+        function mv(e) {
+          var p = at(e), dx = Math.max(-minX, Math.min(1 - maxX, p[0] - p0[0])), dy = Math.max(-minY, Math.min(1 - maxY, p[1] - p0[1]));
+          q = q0.map(function (c) { return [c[0] + dx, c[1] + dy]; }); draw();
+        }
+        function up() { stage.removeEventListener('pointermove', mv); stage.removeEventListener('pointerup', up); stage.removeEventListener('pointercancel', up); done(); }
+        stage.addEventListener('pointermove', mv); stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+      });
+      function draw() {
+        var pts = q.map(function (p) { return p[0] + ',' + p[1]; });
+        poly.setAttribute('points', pts.join(' '));
+        veil.setAttribute('d', 'M0,0H1V1H0Z M' + pts.join(' L') + 'Z');
+        dots.forEach(function (h, k) { h.style.left = q[k][0] * 100 + '%'; h.style.top = q[k][1] * 100 + '%'; });
+      }
+      function renderNote() {
+        note.textContent = 'Only what’s inside the outline is kept; everything outside is cut away.';
+        if (!sameQuad(src.quad, src.guess)) noteLink('Best guess', function () { src.quad = src.guess.map(function (p) { return p.slice(); }); keepChanged(src); renderView(); });
+        if (!sameQuad(src.quad, SCAN_WHOLE)) noteLink('Whole photo', function () { src.quad = SCAN_WHOLE.map(function (p) { return p.slice(); }); keepChanged(src); renderView(); });
+      }
+      draw();
+      view.appendChild(stage);
+      view.appendChild(turnButtons(src));
+      renderNote();
     }
     function edgesButton(label, title, fn) {
       var b = document.createElement('button');
@@ -25090,19 +25461,29 @@
     }
     function addSource(canvas, fromPdf, digital, given) {
       var src = { photo: canvas, canvas: canvas, regions: null, turn: 0, fromPdf: !!fromPdf, digital: !!digital, spread: null };
-      // A photo of paper: where the sheet's corners are, to flatten it to.
-      if (given) { src.quad = given.quad || null; src.frame = !!given.frame; } else findEdges(src);
-      if (given && given.box) src.preset = given.box;
-      straighten(src);
+      if (cropMode) {
+        // The best guess at what to keep; a photo adjusted again keeps its
+        // own outline and erasing.
+        src.guess = digital ? SCAN_WHOLE : scanGuessKeep(canvas, sink.aspect);
+        src.quad = ((given && given.quad) || src.guess).map(function (p) { return p.slice(); });
+        src.erase = given && given.erase ? given.erase.map(function (poly) { return poly.map(function (p) { return p.slice(); }); }) : [];
+        src.regions = [];
+      } else {
+        // A photo of paper: where the sheet's corners are, to flatten it to.
+        if (given) { src.quad = given.quad || null; src.frame = !!given.frame; } else findEdges(src);
+        if (given && given.box) src.preset = given.box;
+        straighten(src);
+      }
       sources.push(src);
       // A PDF is already clean; a photo has shadows to lift. (Digital art
       // ignores these, so the first page that isn't sets them.)
-      if (!given && !digital && sources.filter(function (x) { return !x.digital; }).length === 1) {
+      if (!given && !adjust && !digital && sources.filter(function (x) { return !x.digital; }).length === 1) {
         o.shadow = fromPdf ? 0 : 60; o.contrast = fromPdf ? 0 : 20;
         Object.keys(o.cond).forEach(liftFor);
       }
+      if (cropMode) keepThumb(src);
       refresh();
-      findRegions(src);
+      if (!cropMode) findRegions(src);
     }
     box.querySelectorAll('[data-pick]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -25118,7 +25499,13 @@
       addBtn.dataset.label = 'Save';
       // The kept photo is as it was taken in; quarter turns made in a later
       // Adjust are kept with the settings (`turn`).
-      addSource(turnCanvas(adjust.canvas, adjustTurn), !!(adjust.scan && adjust.scan.fromPdf), false, { quad: adjust.scan ? adjust.scan.quad : null, frame: !!(adjust.scan && adjust.scan.frame), box: adjust.scan ? adjust.scan.box : null });
+      var aScan = adjust.scan;
+      // Picture books: an outline saved with the illustration; one from
+      // before outlines (or none) gets the best guess, and an illustration
+      // with no photo kept is its own whole picture.
+      var given = !cropMode ? { quad: aScan ? aScan.quad : null, frame: !!(aScan && aScan.frame), box: aScan ? aScan.box : null }
+        : aScan && aScan.crop ? { quad: aScan.quad, erase: aScan.erase } : adjust.noRaw ? { quad: SCAN_WHOLE } : null;
+      addSource(turnCanvas(adjust.canvas, adjustTurn), !!(aScan && aScan.fromPdf), false, given);
     }
     // Opened from the list's own buttons: the choice is made, so the
     // dialog's buttons and intro line stay out of the way.
@@ -25200,6 +25587,15 @@
           // page is kept too (its circles whited out), so a cartoon can be
           // reframed later: moved, or zoomed out to take in more.
           var src = sources[i], cuts, page;
+          if (cropMode) {
+            status.textContent = 'Adding ' + (++done) + ' of ' + n + '…';
+            var kept = keepResult(src, keepWarp(src, 2400), 2400), keptRaw = adjust ? adjust.raw : null;
+            if (!adjust && sink.storeRaw && !src.digital) try { keptRaw = await sink.storeRaw(await pbEncode(src.photo, false)); } catch (e) { keptRaw = null; }
+            await sink.store(await pbEncode(kept, o.mode === 'bw'), { spread: assigning ? plan[i][0] : null, raw: keptRaw,
+              scan: src.digital ? null : { crop: true, mode: o.mode, shadow: o.shadow, contrast: o.contrast, brightness: o.brightness, threshold: o.threshold, marks: o.marks || 0,
+                cond: Object.assign({}, o.cond), quad: src.quad, erase: src.erase, turn: adjust ? (adjustTurn + (src.turn || 0)) % 4 : 0, fromPdf: src.fromPdf } });
+            continue;
+          }
           function placed(c, x0, y0) {
             var cb = c.cropBox || { x: 0, y: 0 };
             return { canvas: c, crop: { fx: (x0 + cb.x) / page.width, fy: (y0 + cb.y) / page.height, fw: c.width / page.width, fh: c.height / page.height } };
